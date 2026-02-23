@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Upload, ShoppingBag } from "lucide-react"
 import { useCart } from "@/lib/cart-store"
+import { supabase } from "@/lib/supabase"
 
 import ProductRating from "@/components/ProductRating"
 import RecommendedProducts from "@/components/RecommendedProducts"
@@ -31,7 +32,7 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
     phone: "",
     city: "",
     address: "",
-    paypal: "", // لإضافة بيانات PayPal
+    paypal: "",
   })
 
   const [payment, setPayment] = useState<"paypal" | "shamcash">("paypal")
@@ -46,12 +47,10 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
 
   const validate = () => form.name && form.phone && form.city && form.address
 
-  // فئة المنتج المشتراة لاستخدامها في المنتجات المقترحة
   const purchasedCategory =
     cartState.items.length > 0 ? (cartState.items[0] as any).category : ""
 
   const handleSend = async () => {
-    // ✅ تحقق من إدخال بيانات PayPal أو رفع صورة ShamCash
     if (payment === "paypal" && !form.paypal) {
       alert("يجب إدخال بريد PayPal لإتمام الطلب")
       return
@@ -63,12 +62,10 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
 
     setLoading(true)
 
-    // تجميع المنتجات في نص
     const productsText = cartState.items
       .map(i => `• ${i.name} x${i.quantity} = $${i.price * i.quantity}`)
       .join("\n")
 
-    // نص الرسالة الكامل
     const message = `
 🛒 New Order
 
@@ -86,7 +83,7 @@ ${productsText}
 `
 
     try {
-      // إرسال بيانات + صورة (إذا موجودة) إلى Telegram
+      // إرسال بيانات + صورة إلى Telegram
       const formData = new FormData()
       formData.append("message", message)
       if (proof) formData.append("proof", proof)
@@ -96,9 +93,31 @@ ${productsText}
         body: formData,
       })
 
+      // ✅ إرسال الطلب إلى Supabase
+      const orderData = {
+        name: form.name,
+        phone: form.phone,
+        city: form.city,
+        address: form.address,
+        payment: payment,
+        paypal: form.paypal || null,
+        total: total,
+        items: cartState.items,
+        receipt_url: null, // ✅ تم إضافة هذا السطر لتجنب خطأ NOT NULL
+        created_at: new Date().toISOString(),
+      }
+
+      const { data, error } = await supabase
+        .from("orders")
+        .insert([orderData])
+
+      if (error) console.log("Supabase error:", error)
+      else console.log("Supabase data:", data)
+
       dispatch({ type: "CLEAR_CART" })
       setStep("success")
-    } catch {
+    } catch (err) {
+      console.log("Error sending order:", err)
       alert("Failed to send order")
     }
 
@@ -124,7 +143,6 @@ ${productsText}
           </DialogTitle>
         </DialogHeader>
 
-        {/* SUCCESS */}
         {step === "success" && (
           <div className="space-y-6 py-6">
             <div className="text-center">
@@ -142,7 +160,6 @@ ${productsText}
           </div>
         )}
 
-        {/* STEP 1 */}
         {step === "info" && (
           <div className="space-y-4">
             <Input
@@ -202,7 +219,6 @@ ${productsText}
           </div>
         )}
 
-        {/* STEP 2 */}
         {step === "payment" && (
           <div className="space-y-4">
             <RadioGroup
@@ -220,7 +236,6 @@ ${productsText}
               </div>
             </RadioGroup>
 
-            {/* PayPal بيانات */}
             {payment === "paypal" && (
               <div className="flex flex-col gap-2 border p-2 rounded">
                 <Label>PayPal Email *</Label>
@@ -232,14 +247,13 @@ ${productsText}
               </div>
             )}
 
-            {/* ShamCash */}
             {payment === "shamcash" && (
               <div className="flex flex-col gap-2 border p-3 rounded items-center">
                 <p className="font-bold text-gray-800 text-center text-lg">
                   محفظة Sham Cash
                 </p>
                 <p className="font-bold text-gray-800 text-center text-lg">
-                  ad5elde5f57c494c9ede8f4cfec0f3e6
+                  fe9456d8af5c4599f1c4407fa97df0fc
                 </p>
 
                 <label className="flex flex-col gap-2 mt-2 cursor-pointer w-full">
